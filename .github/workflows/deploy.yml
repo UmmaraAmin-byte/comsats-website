@@ -1,0 +1,87 @@
+﻿name: COMSATS Website Deployment
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  php-lint:
+    name: Check PHP Syntax
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install PHP
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y php-cli
+
+      - name: Check PHP files
+        run: |
+          find public -type f -name '*.php' -print0 | xargs -0 -r -n1 php -l
+
+  virus-scan:
+    name: Scan for Malware
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install ClamAV
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clamav
+          sudo freshclam
+
+      - name: Scan website files
+        run: |
+          clamscan --recursive --infected --max-filesize=50M --max-scansize=200M public/
+
+  deploy:
+    name: Deploy to COMSATS
+    runs-on: ubuntu-latest
+    needs:
+      - php-lint
+      - virus-scan
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: https://ummara.comsats.shakir.blog
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install SSH and rsync
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openssh-client rsync
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          ssh-keygen -y -f ~/.ssh/id_deploy > /dev/null
+
+      - name: Deploy website
+        run: |
+          rsync -rlvz --delete --chmod=D2750,F640 \
+            -e "ssh -p 2280 -i ~/.ssh/id_deploy -o IdentitiesOnly=yes -o BatchMode=yes" \
+            public/ \
+            ummara@ummara.comsats.shakir.blog:/var/www/html/ummara/
+
+      - name: Remove private key
+        if: always()
+        run: rm -f ~/.ssh/id_deploy
