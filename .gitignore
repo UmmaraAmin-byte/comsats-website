@@ -1,0 +1,5 @@
+.env
+*.pem
+*.key
+comsats_deploy*
+node_modules/
