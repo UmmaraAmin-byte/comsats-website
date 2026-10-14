@@ -1,7 +1,7 @@
 ```yaml
 name: COMSATS Website Deployment
 
-on:
+'on':
   push:
     branches:
       - main
